@@ -1,0 +1,149 @@
+import numpy as np
+import math
+import random
+import os
+import matplotlib.pyplot as plt
+from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import r2_score
+import pandas as pd
+
+def mape(y_true, y_pred):
+    return np.mean(np.abs((y_pred - y_true) / y_true)) * 100
+
+# Function
+def target_function(x):
+    test = pd.read_csv('site1.csv', header=None)  #最开始用的两千个数据真实数据
+    test = test.iloc[-600:-500,0].values.reshape(-1)#读取-600到-500
+
+    pre   = pd.read_csv('site1 emd-atlstm.csv', header=None)##预测数据文件
+    imf_1 = pre.iloc[-600:-500,0].values.reshape(-1)
+    imf_2 = pre.iloc[-600:-500,1].values.reshape(-1)
+    imf_3 = pre.iloc[-600:-500,2].values.reshape(-1)
+    imf_4 = pre.iloc[-600:-500,3].values.reshape(-1)
+    imf_5 = pre.iloc[-600:-500,4].values.reshape(-1)
+    imf_6 = pre.iloc[-600:-500,5].values.reshape(-1)
+    imf_7 = pre.iloc[-600:-500,6].values.reshape(-1)
+    imf_8 = pre.iloc[-600:-500,7].values.reshape(-1)
+    imf_9 = pre.iloc[-600:-500,8].values.reshape(-1)
+
+
+
+
+    predict_SSA = imf_1 * x[0] + imf_2 * x[1] + imf_3 * x[2]  + imf_4 * x[3] + \
+                  imf_5 * x[4] + imf_6 * x[5] + imf_7 * x[6] + imf_8 * x[7] + imf_9 * x[8]
+
+        # error = test - predict
+    sum   = mean_squared_error(test, predict_SSA)**(0.5)
+    sum_1 = mean_absolute_error(test, predict_SSA)
+    #sum_2=mape()/10#增加模型的抗干扰程度
+    sum   = (sum + sum_1)/2
+    return sum
+
+# Function: Initialize Variables##初始化种群
+def initial_position(swarm_size = 5, min_values = [-5,-5], max_values = [5,5], target_function = target_function):
+    position = np.zeros((swarm_size, len(min_values) + 1))
+    for i in range(0, swarm_size):
+        for j in range(0, len(min_values)):
+             position[i,j] = random.uniform(min_values[j], max_values[j])
+        position[i,-1] = target_function(position[i,0:position.shape[1]-1])  #fitness
+    return position
+
+# Function: Initialize Food Position  全局最优解初始化
+def food_position(dimension = 2, target_function = target_function):
+    food = np.zeros((1, dimension+1))
+    for j in range(0, dimension):
+        food[0,j] = 0.0
+    food[0,-1] = target_function(food[0,0:food.shape[1]-1])
+    return food
+
+# Function: Updtade Food Position by Fitness
+def update_food(position, food):##更新全局最优解
+    for i in range(0, position.shape[0]):
+        if (food[0,-1] > position[i,-1]):
+            for j in range(0, position.shape[1]):
+                food[0,j] = position[i,j]
+    return food
+
+# Function: Updtade Position  位置更新
+def update_position(position, food, count,iter, c1 = 1, min_values = [-5,-5], max_values = [5,5], target_function = target_function):
+    for i in range(0, position.shape[0]): ##每个种群更新
+        k = np.exp(-count / iter)  #需要改进.k的作用控制平衡
+        if (i <= position.shape[0]/2):
+            for j in range (0, len(min_values)):
+                c2 = int.from_bytes(os.urandom(8), byteorder = "big") / ((1 << 64) - 1)
+                c3 = int.from_bytes(os.urandom(8), byteorder = "big") / ((1 << 64) - 1)
+                if (c3 >= 0.5): #c3 < 0.5
+                    position[i,j] = np.clip((food[0,j] + k * (c1*((max_values[j] - min_values[j])*c2 + min_values[j]))), min_values[j],max_values[j])
+                else:
+                    position[i,j] = np.clip((food[0,j] - k *  (c1*((max_values[j] - min_values[j])*c2 + min_values[j]))), min_values[j],max_values[j])
+        elif (i > position.shape[0]/2 and i < position.shape[0] + 1):
+            for j in range (0, len(min_values)):
+                fit_i_1 = target_function(position[i - 1,0:position.shape[1]-1])
+                fit_i   = target_function(position[i, 0:position.shape[1]-1])
+                if fit_i > fit_i_1:#限制了适应度差的值得影响
+                    position[i, j] = np.clip(((position[i - 1, j] + k * position[i, j]) / 2), min_values[j], max_values[j])
+                else:
+                    position[i, j] = np.clip(((k * position[i - 1, j] + position[i, j]) / 2), min_values[j], max_values[j])
+        position[i,-1] = target_function(position[i,0:position.shape[1]-1])
+    return position
+
+# SSA Function
+def salp_swarm_algorithm(swarm_size = 5, min_values = [-5,-5], max_values = [5,5], iterations = 50, target_function = target_function):#问题维度7维。每一维度给定最大值最小值
+    count= 0 #迭代计数器
+    food_process = np.zeros((1,iterations))#反映了收敛过程
+    position = initial_position(swarm_size = swarm_size, min_values = min_values, max_values = max_values, target_function = target_function)#初始化种群位置
+    food= food_position(dimension = len(min_values), target_function = target_function)
+    while (count <= iterations):
+        print("Iteration = ", count, " f(x) = ", food[0,-1])
+        c1       = 2*math.exp(-(4*(count/iterations))**2)
+        food     = update_food(position, food)
+        food_process[0,count-1] = food[0,-1]
+        position = update_position(position, food, count = count, iter = iterations, c1 = c1, min_values = min_values,
+                                   max_values = max_values, target_function = target_function)
+        count    = count + 1
+    print(food)
+    return food, food_process
+food, food_process = salp_swarm_algorithm(10,[0.98,0.98,0.98,0.98,0.98,0.98,0.98,0.98,0.98],[1.05,1.05,1.05,1.05,1.05,1.05,1.05,1.05,1.05],50,target_function)
+#种群10，设置最大值最小值，迭代次数50
+
+food = food.reshape(-1)
+test = pd.read_csv('site1.csv', header=None)
+test = test.iloc[-500:, 0].values.reshape(-1)
+
+pre = pd.read_csv('site1 emd-atlstm结合.csv', header=None)
+imf_1 = pre.iloc[-500:, 0].values.reshape(-1)
+imf_2 = pre.iloc[-500:, 1].values.reshape(-1)
+imf_3 = pre.iloc[-500:, 2].values.reshape(-1)
+imf_4 = pre.iloc[-500:, 3].values.reshape(-1)
+imf_5 = pre.iloc[-500:, 4].values.reshape(-1)
+imf_6 = pre.iloc[-500:, 5].values.reshape(-1)
+imf_7 = pre.iloc[-500:, 6].values.reshape(-1)
+imf_8 = pre.iloc[-500:, 7].values.reshape(-1)
+imf_9 = pre.iloc[-500:, 8].values.reshape(-1)
+
+predict_SSA = imf_1 * food[0] + imf_2 * food[1] + imf_3 * food[2] + imf_4 * food[3] + \
+              imf_5 * food[4] + imf_6 * food[5] + imf_7 * food[6]+ imf_8 * food[7]+ imf_9 * food[8]
+
+
+# predict_SSA = imf_1  + imf_2  + imf_3  + imf_4  + imf_5  + imf_6  + imf_7
+
+MAE_ssa = mean_absolute_error(test, predict_SSA)
+RMSE_ssa = mean_squared_error(test, predict_SSA)**(0.5)
+R2_ssa = r2_score(test, predict_SSA)
+MAPE_ssa = mape(test, predict_SSA)
+print('RMSE= ',RMSE_ssa)
+print('MAE= ',MAE_ssa)
+print('R2= ',R2_ssa)
+print('MAPE= ',MAPE_ssa)
+print('++++++++++++++++++++++++++++')
+
+food_process = food_process.reshape(-1)
+plt.figure(1)
+plt.plot(predict_SSA, color='red')
+plt.plot(test, color='blue')
+plt.figure(2)
+plt.plot(food_process,color='green')
+plt.show()
+
+np.savetxt('site 1 emd-atlstm -assa-pred', predict_SSA, delimiter=',')
