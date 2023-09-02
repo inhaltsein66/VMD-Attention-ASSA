@@ -1,0 +1,81 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow import keras
+import matplotlib.pyplot as plt
+from sklearn.metrics import mean_squared_error as mse
+from sklearn.metrics import mean_absolute_error as mae
+from sklearn.metrics import r2_score as r2
+import attention
+def mape(y_true, y_pred):
+    return np.mean(np.abs((y_pred - y_true) / y_true))*100
+
+
+#导入数据
+datasets = pd.read_csv('site1.csv',header=None)
+# dataset = datasets.iloc[:,[5]].values
+dataset = datasets.iloc[:,0].values.reshape(-1,1)
+#归一化
+scaled_tool = MinMaxScaler(feature_range=[0, 1])
+data_scaled = scaled_tool.fit_transform(dataset)
+#切片
+step_size = 80
+data_seg = np.zeros((len(data_scaled)-step_size,step_size))
+for i in range(len(data_scaled)-step_size):
+    data_seg[i,:] = data_scaled[i:step_size+i,0]
+data_label = data_scaled[step_size:,0]
+#划分数据集
+test_number = 200
+X_train = data_seg[:-test_number]
+Y_train = data_label[:-test_number]
+X_test = data_seg[-test_number:]
+Y_test = data_label[-test_number:]
+
+#张量转化
+X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
+X_test = np.reshape(X_test,(X_test.shape[0], X_test.shape[1], 1))
+
+#搭建预测模型
+model = keras.models.Sequential()
+model.add(keras.layers.LSTM(64, input_shape=(X_train.shape[1],1), return_sequences=True))
+model.add(keras.layers.Dropout(0.5))
+#
+# model.add(keras.layers.LSTM(64, return_sequences=True))
+# model.add(keras.layers.Dropout(0.1))
+#
+# model.add(keras.layers.LSTM(64,return_sequences=True))
+# model.add(keras.layers.Dropout(0.5))
+#
+model.add(attention.Attention())
+
+model.add(keras.layers.Dense(1))
+model.summary()
+#配置和训练
+model.compile(optimizer='Adam', loss='mse', metrics='mae')
+model.fit(X_train, Y_train, epochs=100, batch_size=64)
+
+#预测
+predict = model.predict(X_test)
+pred_ = scaled_tool.inverse_transform(predict)
+Y_test = Y_test.reshape(Y_test.shape[0],1)
+test_ = scaled_tool.inverse_transform(Y_test)
+
+#计算指标
+print('MAPE : ', mape(test_,pred_))
+print('MAE : ', mae(test_, pred_))
+print('R2 : ', r2(test_, pred_))
+print('RMSE : ', np.sqrt(mse(test_,pred_)))
+#
+
+#绘制结果图
+plt.plot(pred_, color='red', label='Predicted wind speed')
+plt.plot(test_, color='yellow', label='True value of wind speed')
+plt.title("wind speed")
+plt.xlabel("Time")
+plt.ylabel("Wind speed value")
+plt.legend()
+plt.show()
+
+np.savetxt('lstm_pred_',pred_, delimiter=',')
+
+
